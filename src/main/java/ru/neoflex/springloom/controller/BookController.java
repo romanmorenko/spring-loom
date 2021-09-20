@@ -1,5 +1,10 @@
 package ru.neoflex.springloom.controller;
 
+import io.swagger.v3.oas.annotations.OpenAPIDefinition;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.info.Info;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -12,18 +17,23 @@ import ru.neoflex.springloom.service.BookService;
 import java.net.InetAddress;
 import java.net.URI;
 import java.net.UnknownHostException;
-import java.util.stream.Collectors;
+
+
 
 @RestController
 @RequiredArgsConstructor
+@OpenAPIDefinition(info = @Info(title = "Controller for books", version = "1"))
 public class BookController {
 
     private final BookService bookService;
 
     @GetMapping("/book/{id}")
     @ResponseBody
-    public ResponseEntity<BookResponseDTO> get(@PathVariable(name = "id") String id) {
-
+    @Operation(description = "Get book by id", method = "GET")
+    @ApiResponse(responseCode = "200", description = "Book")
+    @ApiResponse(responseCode = "404", description = "Not found")
+    public ResponseEntity<BookResponseDTO> get(@Parameter(name = "id", required = true, example = "2")
+                                               @PathVariable(name = "id") String id) {
         return ResponseEntity.ok(
                 new BookResponseDTO(
                         BookDTO.mapToBookDTO(bookService.get(Long.valueOf(id)).get())
@@ -33,19 +43,26 @@ public class BookController {
 
     @GetMapping("/book")
     @ResponseBody
+    @Operation(description = "Get all books", method = "GET")
+    @ApiResponse(responseCode = "200", description = "Books")
     public ResponseEntity<BooksResponseDTO> get() {
 
         return ResponseEntity.ok(
                 new BooksResponseDTO(
                         bookService.all().stream()
-                                .map(BookDTO::mapToBookDTO).collect(Collectors.toList())
+                                .map(BookDTO::mapToBookDTO).toList()
                 )
         );
     }
 
+
     @PostMapping("/book")
     @ResponseBody
-    public ResponseEntity<BookResponseDTO> add(@RequestBody BookDTO bookDTO) throws UnknownHostException {
+    @Operation(description = "Add book", method = "POST")
+    @ApiResponse(responseCode = "201", description = "Books")
+    public ResponseEntity<BookResponseDTO> add(
+            @io.swagger.v3.oas.annotations.parameters.RequestBody(description = "book")
+            @RequestBody BookDTO bookDTO) throws UnknownHostException {
 
         Book book = bookService.saveBook(BookDTO.mapToBook(bookDTO));
         return ResponseEntity
@@ -57,7 +74,9 @@ public class BookController {
 
     @DeleteMapping("/book/{id}")
     @ResponseBody
-    public ResponseEntity delete(@PathVariable(name = "id") String id) {
+    @Operation(description = "Delete book", method = "DELETE")
+    @ApiResponse(responseCode = "204")
+    public ResponseEntity<String> delete(@PathVariable(name = "id") String id) {
 
         bookService.delete(Long.valueOf(id));
         return ResponseEntity.noContent().build();
@@ -65,7 +84,9 @@ public class BookController {
 
     @DeleteMapping("/book")
     @ResponseBody
-    public ResponseEntity clear() {
+    @Operation(description = "Delete all books", method = "DELETE")
+    @ApiResponse(responseCode = "204")
+    public ResponseEntity<String> clear() {
 
         bookService.clear();
         return ResponseEntity.noContent().build();

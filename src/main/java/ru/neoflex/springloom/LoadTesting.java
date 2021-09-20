@@ -5,6 +5,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpHeaders;
 import ru.neoflex.springloom.dto.BookDTO;
 
 import java.net.URI;
@@ -26,52 +27,62 @@ import java.util.stream.IntStream;
 @Data
 public class LoadTesting {
 
-    private static final int BOOKS_COUNT = 1000;
-    private static final int SLEEPS_COUNT = 1000;
+    private static final int BOOKS_COUNT = 1800;
+    private static final int SLEEPS_COUNT = 1800;
     private static final boolean IS_VIRTUAL = true;
+    private static final boolean LOG_RESPONSES = false;
+    private static final boolean LOG_ERRORS = false;
+    public static final String APPLICATION_JSON_CHARSET_UTF_8 = "application/json; charset=UTF-8";
+
     private HttpClient httpClient = HttpClient.newBuilder()
             .executor(Executors.newVirtualThreadExecutor())
             .connectTimeout(Duration.ofMillis(10000)).build();
     private AtomicInteger errorCounts = new AtomicInteger(0);
     private AtomicInteger successCounts = new AtomicInteger(0);
+    double startTime;
 
 
     public static void main(String[] args) throws ExecutionException, InterruptedException {
         LoadTesting loadTesting = new LoadTesting();
-        log.info("Start clean db");
         loadTesting.clear().get();
-        log.info("Database is clean");
-        log.info("Start add books in {} threads", IS_VIRTUAL ? "virtual" : "OS");
-        double startTime = System.nanoTime() / 1000_000_000.0;
-        CompletableFuture.allOf(loadTesting.addBooks(IS_VIRTUAL)
+        CompletableFuture.allOf(loadTesting.addBooks()
                 .toArray(new CompletableFuture[BOOKS_COUNT])).join();
-        double completeTime = System.nanoTime() / 1000_000_000.0;
-        log.info("Complete with {} s, success {} and errors {} ", completeTime - startTime,
+        loadTesting.logResult(loadTesting);
+        CompletableFuture.allOf(loadTesting.sleep()
+                        .toArray(new CompletableFuture[SLEEPS_COUNT]))
+                .join();
+        loadTesting.logResult(loadTesting);
+    }
+
+    private void logResult(LoadTesting loadTesting) {
+        log.info("Complete with {} s, success {} and errors {} ", (System.nanoTime() / 1000_000_000.0) - startTime,
                 loadTesting.successCounts, loadTesting.errorCounts);
     }
 
 
     public CompletableFuture<String> clear() {
-        errorCounts.set(0);
-        successCounts.set(0);
+        log.info("Start clean db");
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create("http://localhost:8083/book"))
-                .header("Content-Type", "application/json; charset=UTF-8")
+                .header(HttpHeaders.CONTENT_TYPE, APPLICATION_JSON_CHARSET_UTF_8)
                 .DELETE()
                 .build();
         return httpClient.sendAsync(request, HttpResponse.BodyHandlers.ofString())
-                .thenApply(it -> it.body())
+                .thenApply(HttpResponse::body)
                 .exceptionally(e -> {
                     log.error("Error clear ", e);
                     System.exit(-1);
                     return null;
-                });
+                }).whenComplete((res, ex) -> log.info("Database is clean"));
     }
 
-    public List<CompletableFuture<String>> addBooks(boolean isVirtual) {
+
+    public List<CompletableFuture<String>> addBooks() {
+        log.info("Start add books in {} threads", IS_VIRTUAL ? "virtual" : "OS native");
+        startMeasure();
         return IntStream.range(0, BOOKS_COUNT).mapToObj(it -> {
             String bookName = "Book";
-            String port = isVirtual ? "8083" : "8081";
+            String port = getPort();
             ObjectMapper mapper = new ObjectMapper();
             BookDTO bookDTO = new BookDTO(bookName + it);
             String requestBody = null;
@@ -84,41 +95,57 @@ public class LoadTesting {
             HttpRequest.BodyPublisher bodyPublisher = HttpRequest.BodyPublishers.ofString(requestBody);
             HttpRequest request = HttpRequest.newBuilder()
                     .uri(URI.create("http://localhost:" + port + "/book"))
-                    .header("Content-Type", "application/json; charset=UTF-8")
+                    .header(HttpHeaders.CONTENT_TYPE, APPLICATION_JSON_CHARSET_UTF_8)
                     .POST(bodyPublisher)
                     .build();
             return httpClient.sendAsync(request, HttpResponse.BodyHandlers.ofString())
-                    .thenApply((response) -> {
+                    .thenApply(response -> {
                         String body = response.body();
-                        log.info("Response body for add book request: {}", response.body());
+                        if (LOG_RESPONSES) log.info("Response body for add book request: {}", response.body());
                         successCounts.incrementAndGet();
                         return body;
                     }).exceptionally(e -> {
-                        log.error("Error for add book request", e);
+                        if (LOG_ERRORS) log.error("Error for add book request", e);
                         errorCounts.incrementAndGet();
                         return e.getMessage();
                     });
-        }).collect(Collectors.toList());
+        }).toList();
     }
 
+
     public List<CompletableFuture<String>> sleep() {
+        log.info("Start long tasks in {} threads", IS_VIRTUAL ? "virtual" : "OS native");
+        startMeasure();
+        String port = getPort();
         return IntStream.range(0, SLEEPS_COUNT).mapToObj(it -> {
             Random random = new Random(System.currentTimeMillis());
-            Long time = random.nextLong(10, 100);
+            long time = random.nextLong(10, 100);
             HttpRequest request = HttpRequest.newBuilder()
-                    .uri(URI.create("http://localhost:8083/sleep/" + time))
-                    .header("Content-Type", "application/json; charset=UTF-8")
+                    .uri(URI.create("http://localhost:" + port + "/sleep/" + time))
+                    .header(HttpHeaders.CONTENT_TYPE, APPLICATION_JSON_CHARSET_UTF_8)
                     .GET().build();
             return httpClient.sendAsync(request, HttpResponse.BodyHandlers.ofString())
-                    .thenApply((response) -> {
-                        log.info("Response body for sleep request: {}", response.body());
+                    .thenApply(response -> {
+                        if (LOG_RESPONSES) log.info("Response body for sleep request: {}", response.body());
+                        successCounts.incrementAndGet();
                         return response.body();
                     })
                     .exceptionally(e -> {
-                        log.error("Error for sleep request", e);
+                        if (LOG_ERRORS) log.error("Error for sleep request", e);
+                        errorCounts.incrementAndGet();
                         return e.getMessage();
                     });
-        }).collect(Collectors.toList());
+        }).toList();
+    }
+
+    private static String getPort() {
+        return IS_VIRTUAL ? "8083" : "8081";
+    }
+
+    private void startMeasure() {
+        errorCounts.set(0);
+        successCounts.set(0);
+        startTime = System.nanoTime() / 1000_000_000.0;
     }
 
 }
