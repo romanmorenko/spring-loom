@@ -27,8 +27,10 @@ import java.util.stream.IntStream;
 @Data
 public class LoadTesting {
 
-    private static final int BOOKS_COUNT = 1800;
-    private static final int SLEEPS_COUNT = 1800;
+    private static final int BOOKS_COUNT = 1600;
+    private static final int SLEEPS_COUNT = 1600;
+    private static final int SLEEPS_MIN_TIME_MS = 100;
+    private static final int SLEEPS_MAX_TIME_MS = 1000;
     private static final boolean IS_VIRTUAL = true;
     private static final boolean LOG_RESPONSES = false;
     private static final boolean LOG_ERRORS = false;
@@ -37,8 +39,8 @@ public class LoadTesting {
     private HttpClient httpClient = HttpClient.newBuilder()
             .executor(Executors.newVirtualThreadExecutor())
             .connectTimeout(Duration.ofMillis(10000)).build();
-    private AtomicInteger errorCounts = new AtomicInteger(0);
-    private AtomicInteger successCounts = new AtomicInteger(0);
+    private AtomicInteger errorCounts = new AtomicInteger();
+    private AtomicInteger successCounts = new AtomicInteger();
     double startTime;
 
 
@@ -94,7 +96,7 @@ public class LoadTesting {
             }
             HttpRequest.BodyPublisher bodyPublisher = HttpRequest.BodyPublishers.ofString(requestBody);
             HttpRequest request = HttpRequest.newBuilder()
-                    .uri(URI.create("http://localhost:" + port + "/book"))
+                    .uri(URI.create(String.format("http://localhost:%s/book", port)))
                     .header(HttpHeaders.CONTENT_TYPE, APPLICATION_JSON_CHARSET_UTF_8)
                     .POST(bodyPublisher)
                     .build();
@@ -119,9 +121,9 @@ public class LoadTesting {
         String port = getPort();
         return IntStream.range(0, SLEEPS_COUNT).mapToObj(it -> {
             Random random = new Random(System.currentTimeMillis());
-            long time = random.nextLong(10, 100);
+            long time = random.nextLong(SLEEPS_MIN_TIME_MS, SLEEPS_MAX_TIME_MS);
             HttpRequest request = HttpRequest.newBuilder()
-                    .uri(URI.create("http://localhost:" + port + "/sleep/" + time))
+                    .uri(URI.create(String.format("http://localhost:%s/sleep/%d", port, time)))
                     .header(HttpHeaders.CONTENT_TYPE, APPLICATION_JSON_CHARSET_UTF_8)
                     .GET().build();
             return httpClient.sendAsync(request, HttpResponse.BodyHandlers.ofString())

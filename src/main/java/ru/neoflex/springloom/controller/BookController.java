@@ -17,7 +17,7 @@ import ru.neoflex.springloom.service.BookService;
 import java.net.InetAddress;
 import java.net.URI;
 import java.net.UnknownHostException;
-
+import java.util.Optional;
 
 
 @RestController
@@ -33,10 +33,12 @@ public class BookController {
     @ApiResponse(responseCode = "200", description = "Book")
     @ApiResponse(responseCode = "404", description = "Not found")
     public ResponseEntity<BookResponseDTO> get(@Parameter(name = "id", required = true, example = "2")
-                                               @PathVariable(name = "id") String id) {
+                                               @PathVariable(name = "id") String id) throws BookNotFoundException {
+        final Optional<Book> bookOptional = bookService.get(Long.valueOf(id));
         return ResponseEntity.ok(
                 new BookResponseDTO(
-                        BookDTO.mapToBookDTO(bookService.get(Long.valueOf(id)).get())
+                        BookDTO.mapToBookDTO(
+                                bookOptional.orElseThrow(() -> new BookNotFoundException(id)))
                 )
         );
     }
