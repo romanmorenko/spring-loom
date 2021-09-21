@@ -20,18 +20,17 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
 @Slf4j
 @Data
 public class LoadTesting {
 
-    private static final int BOOKS_COUNT = 1600;
-    private static final int SLEEPS_COUNT = 1600;
-    private static final int SLEEPS_MIN_TIME_MS = 100;
-    private static final int SLEEPS_MAX_TIME_MS = 1000;
-    private static final boolean IS_VIRTUAL = true;
+    private static final int PORT = 8081;
+    private static final int BOOKS_COUNT = 5000;
+    private static final int SLEEPS_COUNT = 5000;
+    private static final int SLEEPS_MIN_TIME_MS = 1000;
+    private static final int SLEEPS_MAX_TIME_MS = 2000;
     private static final boolean LOG_RESPONSES = false;
     private static final boolean LOG_ERRORS = false;
     public static final String APPLICATION_JSON_CHARSET_UTF_8 = "application/json; charset=UTF-8";
@@ -65,7 +64,7 @@ public class LoadTesting {
     public CompletableFuture<String> clear() {
         log.info("Start clean db");
         HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create("http://localhost:8083/book"))
+                .uri(URI.create(String.format("http://localhost:%d/book", PORT)))
                 .header(HttpHeaders.CONTENT_TYPE, APPLICATION_JSON_CHARSET_UTF_8)
                 .DELETE()
                 .build();
@@ -80,11 +79,10 @@ public class LoadTesting {
 
 
     public List<CompletableFuture<String>> addBooks() {
-        log.info("Start add books in {} threads", IS_VIRTUAL ? "virtual" : "OS native");
+        log.info("Start add books");
         startMeasure();
         return IntStream.range(0, BOOKS_COUNT).mapToObj(it -> {
             String bookName = "Book";
-            String port = getPort();
             ObjectMapper mapper = new ObjectMapper();
             BookDTO bookDTO = new BookDTO(bookName + it);
             String requestBody = null;
@@ -96,7 +94,7 @@ public class LoadTesting {
             }
             HttpRequest.BodyPublisher bodyPublisher = HttpRequest.BodyPublishers.ofString(requestBody);
             HttpRequest request = HttpRequest.newBuilder()
-                    .uri(URI.create(String.format("http://localhost:%s/book", port)))
+                    .uri(URI.create(String.format("http://localhost:%d/book", PORT)))
                     .header(HttpHeaders.CONTENT_TYPE, APPLICATION_JSON_CHARSET_UTF_8)
                     .POST(bodyPublisher)
                     .build();
@@ -116,14 +114,13 @@ public class LoadTesting {
 
 
     public List<CompletableFuture<String>> sleep() {
-        log.info("Start long tasks in {} threads", IS_VIRTUAL ? "virtual" : "OS native");
+        log.info("Start long tasks");
         startMeasure();
-        String port = getPort();
         return IntStream.range(0, SLEEPS_COUNT).mapToObj(it -> {
             Random random = new Random(System.currentTimeMillis());
             long time = random.nextLong(SLEEPS_MIN_TIME_MS, SLEEPS_MAX_TIME_MS);
             HttpRequest request = HttpRequest.newBuilder()
-                    .uri(URI.create(String.format("http://localhost:%s/sleep/%d", port, time)))
+                    .uri(URI.create(String.format("http://localhost:%d/sleep/%d", PORT, time)))
                     .header(HttpHeaders.CONTENT_TYPE, APPLICATION_JSON_CHARSET_UTF_8)
                     .GET().build();
             return httpClient.sendAsync(request, HttpResponse.BodyHandlers.ofString())
@@ -138,10 +135,6 @@ public class LoadTesting {
                         return e.getMessage();
                     });
         }).toList();
-    }
-
-    private static String getPort() {
-        return IS_VIRTUAL ? "8083" : "8081";
     }
 
     private void startMeasure() {
